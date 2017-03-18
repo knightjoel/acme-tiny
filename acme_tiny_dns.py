@@ -150,6 +150,9 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
             raise ValueError("GoDaddy API request returned code {}: {}"
                                  .format(code, result))
 
+        log.info("DNS record created. Pausing so DNS can settle...")
+        time.sleep(5)
+
         # notify challenge are met
         code, result = _send_signed_request(challenge['uri'], {
             "resource": "challenge",
@@ -157,9 +160,6 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
         })
         if code != 202:
             raise ValueError("Error triggering challenge: {0} {1}".format(code, result))
-
-        log.info("Pausing for DNS to settle...")
-        time.sleep(5)
 
         # wait for challenge to be verified
         while True:
