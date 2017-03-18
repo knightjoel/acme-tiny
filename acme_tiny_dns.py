@@ -12,6 +12,7 @@ DEFAULT_CA = "https://acme-v01.api.letsencrypt.org"
 GD_URL = "https://api.godaddy.com/v1"
 #GD_URL = "https://api.ote-godaddy.com/v1"
 
+CONF = os.path.join(os.environ["HOME"], ".acme_tiny_dns.conf")
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
@@ -69,8 +70,8 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
     # helper function to twiddle godaddy's api
     def _send_gd_api_request(api_ep, data = None):
         headers = {
-            'Authorization': 'sso-key {}:{}'.format(os.environ["GD_KEY"],
-                                                    os.environ["GD_SECRET"]),
+            'Authorization': 'sso-key {}:{}'.format(local_config["gd_key"],
+                                                    local_config["gd_secret"]),
             'Content-Type': 'application/json'
         }
         try:
@@ -110,6 +111,14 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
         log.info("Already registered!")
     else:
         raise ValueError("Error registering: {0} {1}".format(code, result))
+
+    try:
+        with open(CONF) as conf_file:
+            local_config = json.load(conf_file)
+    except ValueError:
+        log.error("Could not parse config file ({}). Is it valid JSON?"
+                  .format(CONF))
+        sys.exit(1)
 
     # verify each domain
     for domain in domains:
@@ -215,11 +224,9 @@ def main(argv):
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
 
-    if "GD_KEY" not in os.environ:
-        raise Exception("GD_KEY not set")
-
-    if "GD_SECRET" not in os.environ:
-        raise Exception("GD_SECRET not set")
+    if not os.path.isfile(CONF):
+        LOGGER.error("Config file {} does not exist".format(CONF))
+        sys.exit(1)
 
     signed_crt = get_crt(args.account_key, args.csr, args.dns_zone, log=LOGGER, CA=args.ca)
     sys.stdout.write(signed_crt)
