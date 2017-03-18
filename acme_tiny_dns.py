@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging
+import requests
 try:
     from urllib.request import urlopen # Python 3
 except ImportError:
@@ -8,11 +9,15 @@ except ImportError:
 #DEFAULT_CA = "https://acme-staging.api.letsencrypt.org"
 DEFAULT_CA = "https://acme-v01.api.letsencrypt.org"
 
+GD_URL = "https://api.godaddy.com/v1"
+#GD_URL = "https://api.ote-godaddy.com/v1"
+
+
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
 
-def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA):
+def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
     # helper function base64 encode for jose spec
     def _b64(b):
         return base64.urlsafe_b64encode(b).decode('utf8').replace("=", "")
@@ -61,6 +66,21 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA):
         except IOError as e:
             return getattr(e, "code", None), getattr(e, "read", e.__str__)()
 
+    # helper function to twiddle godaddy's api
+    def _send_gd_api_request(api_ep, data = None):
+        headers = {
+            'Authorization': 'sso-key {}:{}'.format(os.environ["GD_KEY"],
+                                                    os.environ["GD_SECRET"]),
+            'Content-Type': 'application/json'
+        }
+        try:
+            r = requests.put("{}{}".format(GD_URL, api_ep),
+                             data = json.dumps(data),
+                             headers = headers)
+            return r.status_code, r.text
+        except requests.exceptions.RequestException as e:
+            return getattr(e, "code", None), getattr(e, "read", e.__str__)()
+
     # find domains
     log.info("Parsing CSR...")
     proc = subprocess.Popen(["openssl", "req", "-in", csr, "-noout", "-text"],
@@ -103,24 +123,23 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA):
         if code != 201:
             raise ValueError("Error requesting challenges: {0} {1}".format(code, result))
 
-        # make the challenge file
-        challenge = [c for c in json.loads(result.decode('utf8'))['challenges'] if c['type'] == "http-01"][0]
+        # create the dns entry
+        challenge = [c for c in json.loads(result.decode('utf8'))['challenges'] 
+                        if c['type'] == "dns-01"][0]
         token = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
         keyauthorization = "{0}.{1}".format(token, thumbprint)
-        wellknown_path = os.path.join(acme_dir, token)
-        with open(wellknown_path, "w") as wellknown_file:
-            wellknown_file.write(keyauthorization)
-
-        # check that the file is in place
-        wellknown_url = "http://{0}/.well-known/acme-challenge/{1}".format(domain, token)
-        try:
-            resp = urlopen(wellknown_url)
-            resp_data = resp.read().decode('utf8').strip()
-            assert resp_data == keyauthorization
-        except (IOError, AssertionError):
-            os.remove(wellknown_path)
-            raise ValueError("Wrote file to {0}, but couldn't download {1}".format(
-                wellknown_path, wellknown_url))
+        keyauthhash = _b64(hashlib.sha256(keyauthorization.encode('utf8')).digest())
+        dnstxt = "_acme-challenge." + domain
+        dnsbody = {
+            'data': keyauthhash,
+            'ttl': 600
+        }
+        code, result = _send_gd_api_request("/domains/{}/records/TXT/{}"
+                                .format(dns_zone, dnstxt),
+                             data = dnsbody)
+        if code != 200:
+            raise ValueError("GoDaddy API request returned code {}: {}"
+                                 .format(code, result))
 
         # notify challenge are met
         code, result = _send_signed_request(challenge['uri'], {
@@ -129,6 +148,9 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA):
         })
         if code != 202:
             raise ValueError("Error triggering challenge: {0} {1}".format(code, result))
+
+        log.info("Pausing for DNS to settle...")
+        time.sleep(5)
 
         # wait for challenge to be verified
         while True:
@@ -142,7 +164,8 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA):
                 time.sleep(2)
             elif challenge_status['status'] == "valid":
                 log.info("{0} verified!".format(domain))
-                os.remove(wellknown_path)
+                # XXX should remove the DNS record at this point but the
+                # GoDaddy API strangely doesn't support this
                 break
             else:
                 raise ValueError("{0} challenge did not pass: {1}".format(
@@ -185,13 +208,20 @@ def main(argv):
     )
     parser.add_argument("--account-key", required=True, help="path to your Let's Encrypt account private key")
     parser.add_argument("--csr", required=True, help="path to your certificate signing request")
-    parser.add_argument("--acme-dir", required=True, help="path to the .well-known/acme-challenge/ directory")
+    parser.add_argument("--dns-zone", required=True, help="the name of the DNS zone to use for ownership verification")
     parser.add_argument("--quiet", action="store_const", const=logging.ERROR, help="suppress output except for errors")
     parser.add_argument("--ca", default=DEFAULT_CA, help="certificate authority, default is Let's Encrypt")
 
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
-    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca)
+
+    if "GD_KEY" not in os.environ:
+        raise Exception("GD_KEY not set")
+
+    if "GD_SECRET" not in os.environ:
+        raise Exception("GD_SECRET not set")
+
+    signed_crt = get_crt(args.account_key, args.csr, args.dns_zone, log=LOGGER, CA=args.ca)
     sys.stdout.write(signed_crt)
 
 if __name__ == "__main__": # pragma: no cover
