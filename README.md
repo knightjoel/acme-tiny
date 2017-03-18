@@ -1,7 +1,4 @@
-# acme-tiny
-
-[![Build Status](https://travis-ci.org/diafygi/acme-tiny.svg)](https://travis-ci.org/diafygi/acme-tiny)
-[![Coverage Status](https://coveralls.io/repos/diafygi/acme-tiny/badge.svg?branch=master&service=github)](https://coveralls.io/github/diafygi/acme-tiny?branch=master)
+# acme-tiny-dns
 
 This is a tiny, auditable script that you can throw on your server to issue
 and renew [Let's Encrypt](https://letsencrypt.org/) certificates. Since it has
@@ -11,7 +8,11 @@ The only prerequisites are python and openssl.
 
 **PLEASE READ THE SOURCE CODE! YOU MUST TRUST IT WITH YOUR PRIVATE KEYS!**
 
-##Donate
+acme-tiny-dns **uses DNS for verifying ownership of a domain** whereas
+acme-tiny uses HTTP. Specifically, acme-tiny-dns uses the
+[GoDaddy API](https://developer.godaddy.com/) for creating DNS records.
+
+## Donate
 
 If this script is useful to you, please donate to the EFF. I don't work there,
 but they do fantastic work.
@@ -79,32 +80,21 @@ openssl req -new -sha256 -key domain.key -subj "/CN=yoursite.com" > domain.csr
 openssl req -new -sha256 -key domain.key -subj "/" -reqexts SAN -config <(cat /etc/ssl/openssl.cnf <(printf "[SAN]\nsubjectAltName=DNS:yoursite.com,DNS:www.yoursite.com")) > domain.csr
 ```
 
-### Step 3: Make your website host challenge files
+### Step 3: Get an API secret and key
 
-You must prove you own the domains you want a certificate for, so Let's Encrypt
-requires you host some files on them. This script will generate and write those
-files in the folder you specify, so all you need to do is make sure that this
-folder is served under the ".well-known/acme-challenge/" url path. NOTE: Let's
-Encrypt will perform a plain HTTP request to port 80 on your server, so you
-must serve the challenge files via HTTP (a redirect to HTTPS is fine too).
+Visit the (GoDaddy developer site)[https://developer.godaddy.com/] and generate
+a key and secret. Make sure you generate a "production" key and not a "test"
+key.
+
+When you have your key and secret, create a JSON-formatted config file
+`$HOME/.acme_tiny_dns.conf` that stores those two strings. **Make sure the
+config file is `chmod 600`.**
 
 ```
-#make some challenge folder (modify to suit your needs)
-mkdir -p /var/www/challenges/
-```
-
-```nginx
-#example for nginx
-server {
-    listen 80;
-    server_name yoursite.com www.yoursite.com;
-
-    location /.well-known/acme-challenge/ {
-        alias /var/www/challenges/;
-        try_files $uri =404;
-    }
-
-    ...the rest of your config
+% cat $HOME/.acme_tiny_dns.conf
+{
+ "gd_key":"FAE...",
+ "gd_secret":"14F..."
 }
 ```
 
@@ -116,7 +106,7 @@ and read your private account key and CSR.
 
 ```
 #run the script on your server
-python acme_tiny.py --account-key ./account.key --csr ./domain.csr --acme-dir /var/www/challenges/ > ./signed.crt
+python acme_tiny_dns.py --account-key ./account.key --csr ./domain.csr --dns-zone domain.com > ./signed.crt
 ```
 
 ### Step 5: Install the certificate
@@ -173,7 +163,7 @@ for example script).
 Example of a `renew_cert.sh`:
 ```sh
 #!/usr/bin/sh
-python /path/to/acme_tiny.py --account-key /path/to/account.key --csr /path/to/domain.csr --acme-dir /var/www/challenges/ > /tmp/signed.crt || exit
+python /path/to/acme_tiny_dns.py --account-key /path/to/account.key --csr /path/to/domain.csr --dns-zone domain.com > /tmp/signed.crt || exit
 wget -O - https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem > intermediate.pem
 cat /tmp/signed.crt intermediate.pem > /path/to/chained.pem
 service nginx reload
