@@ -82,7 +82,7 @@ openssl req -new -sha256 -key domain.key -subj "/" -reqexts SAN -config <(cat /e
 
 ### Step 3: Get an API secret and key
 
-Visit the (GoDaddy developer site)[https://developer.godaddy.com/] and generate
+Visit the [GoDaddy developer site](https://developer.godaddy.com/) and generate
 a key and secret. Make sure you generate a "production" key and not a "test"
 key.
 
