@@ -10,7 +10,8 @@ The only prerequisites are python and openssl.
 
 acme-tiny-dns **uses DNS for verifying ownership of a domain** whereas
 acme-tiny uses HTTP. Specifically, acme-tiny-dns uses the
-[GoDaddy API](https://developer.godaddy.com/) for creating DNS records.
+[ClouDNS API](https://www.cloudns.net/wiki/article/41/) for creating DNS
+records.
 
 ## Donate
 
@@ -80,21 +81,22 @@ openssl req -new -sha256 -key domain.key -subj "/CN=yoursite.com" > domain.csr
 openssl req -new -sha256 -key domain.key -subj "/" -reqexts SAN -config <(cat /etc/ssl/openssl.cnf <(printf "[SAN]\nsubjectAltName=DNS:yoursite.com,DNS:www.yoursite.com")) > domain.csr
 ```
 
-### Step 3: Get an API secret and key
+### Step 3: Create a ClouDNS API account
 
-Visit the [GoDaddy developer site](https://developer.godaddy.com/) and generate
-a key and secret. Make sure you generate a "production" key and not a "test"
-key.
+Login to your [ClouDNS account](https://www.cloudns.net), go to "API" and
+create an API sub-user with access to the zone(s) you wish to verify with
+Let's Encrypt.
 
-When you have your key and secret, create a JSON-formatted config file
-`$HOME/.acme_tiny_dns.conf` that stores those two strings. **Make sure the
-config file is `chmod 600`.**
+When your sub-user is created, create a JSON-formatted config file
+`$HOME/.acme_tiny_dns.conf` that stores the username and password you just
+created.
+**Make sure the config file is `chmod 600`.**
 
 ```
 % cat $HOME/.acme_tiny_dns.conf
 {
- "gd_key":"FAE...",
- "gd_secret":"14F..."
+ "cloudns_auth_user":"username",
+ "cloudns_auth_password":"password"
 }
 ```
 

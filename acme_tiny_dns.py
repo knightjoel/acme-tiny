@@ -9,8 +9,7 @@ except ImportError:
 #DEFAULT_CA = "https://acme-staging.api.letsencrypt.org"
 DEFAULT_CA = "https://acme-v01.api.letsencrypt.org"
 
-GD_URL = "https://api.godaddy.com/v1"
-#GD_URL = "https://api.ote-godaddy.com/v1"
+DNS_API_URL = "https://api.cloudns.net/"
 
 CONF = os.path.join(os.environ["HOME"], ".acme_tiny_dns.conf")
 
@@ -65,21 +64,6 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
             resp = urlopen(url, data.encode('utf8'))
             return resp.getcode(), resp.read()
         except IOError as e:
-            return getattr(e, "code", None), getattr(e, "read", e.__str__)()
-
-    # helper function to twiddle godaddy's api
-    def _send_gd_api_request(api_ep, data = None):
-        headers = {
-            'Authorization': 'sso-key {}:{}'.format(local_config["gd_key"],
-                                                    local_config["gd_secret"]),
-            'Content-Type': 'application/json'
-        }
-        try:
-            r = requests.put("{}{}".format(GD_URL, api_ep),
-                             data = json.dumps(data),
-                             headers = headers)
-            return r.status_code, r.text
-        except requests.exceptions.RequestException as e:
             return getattr(e, "code", None), getattr(e, "read", e.__str__)()
 
     # find domains
@@ -138,20 +122,86 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
         token = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
         keyauthorization = "{0}.{1}".format(token, thumbprint)
         keyauthhash = _b64(hashlib.sha256(keyauthorization.encode('utf8')).digest())
-        dnstxt = "_acme-challenge." + domain
-        dnsbody = {
-            'data': keyauthhash,
-            'ttl': 600
+        # the cloudns api expects just the host part and not host.zone in the
+        # 'host' key.
+        if dns_zone != domain:
+            dns_host = domain[0:domain.find(dns_zone)-1]
+        else:
+            dns_host = ""
+        # XXX debug
+        log.info("Adding TXT record {} for keyauth {}.{}\n"
+                 .format(keyauthhash, token, thumbprint))
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded'
         }
-        code, result = _send_gd_api_request("/domains/{}/records/TXT/{}"
-                                .format(dns_zone, dnstxt),
-                             data = dnsbody)
-        if code != 200:
-            raise ValueError("GoDaddy API request returned code {}: {}"
+        dns_body = {
+            'sub-auth-user': local_config['cloudns_auth_user'],
+            'auth-password': local_config['cloudns_auth_password'],
+            'domain-name': dns_zone,
+            'host': "_acme-challenge." + dns_host,
+            'record': keyauthhash,
+            'ttl': 300
+        }
+
+        # list records; get the record-id of the acme-challenge record
+        try:
+            r = requests.get("{}{}".format(DNS_API_URL, "/dns/records.json"),
+                             headers = headers,
+                             params = dns_body)
+        except requests.exceptions.RequestException as e:
+            raise ValueError("Couldn't get list of DNS records: {}: {}"
+                    .format(getattr(e, "code", None),
+                            getattr(e, "read", e.__str__)))
+
+        # FYI, cloudns will return 200 even if auth fails
+        if r.status_code != 200:
+            raise ValueError("DNS API request returned code {}: {}"
                                  .format(code, result))
+        try:
+            resp = json.loads(r.text)
+        except ValueError as e:
+            raise ValueError("Did not get a valid JSON response from DNS API")
+
+        if type(resp) is list and len(resp) == 0:
+            raise ValueError(("DNS record '{}' does not exist and must be"
+                                  " created".format(dns_body['host'])))
+        if 'status' in resp.keys() and resp['status'] == 'Failed':
+            raise ValueError("DNS API called failed: {}"
+                                 .format(resp['statusDescription']))
+
+        # update the record
+        try:
+            dns_body.update({"record-id": resp.keys()[0]})
+        except ValueError as e:
+            raise ValueError("Could not find DNS record to update: {}: {}"
+                    .format(getattr(e, "code", None),
+                            getattr(e, "read", e.__str__)))
+        try:
+            r = requests.post("{}{}".format(DNS_API_URL,
+                                           "/dns/mod-record.json"),
+                             headers = headers,
+                             data = dns_body)
+        except requests.exceptions.RequestException as e:
+            raise ValueError("Failed to update DNS record {}: {}: {}"
+                    .format(dns_body['host'],
+                            getattr(e, "code", None),
+                            getattr(e, "read", e.__str__)))
+
+        # FYI, cloudns will return 200 even if auth fails
+        if r.status_code != 200:
+            raise ValueError("DNS API request returned code {}: {}"
+                                 .format(code, result))
+        try:
+            resp = json.loads(r.text)
+        except ValueError as e:
+            raise ValueError("Did not get a valid JSON response from DNS API")
+
+        if 'status' in resp.keys() and resp['status'] == 'Failed':
+            raise ValueError("DNS API called failed: {}"
+                                 .format(resp['statusDescription']))
 
         log.info("DNS record created. Pausing so DNS can settle...")
-        time.sleep(5)
+        time.sleep(60)
 
         # notify challenge are met
         code, result = _send_signed_request(challenge['uri'], {
