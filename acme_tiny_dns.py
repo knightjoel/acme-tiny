@@ -128,9 +128,6 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
             dns_host = domain[0:domain.find(dns_zone)-1]
         else:
             dns_host = ""
-        # XXX debug
-        log.info("Adding TXT record {} for keyauth {}.{}\n"
-                 .format(keyauthhash, token, thumbprint))
         headers = {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
