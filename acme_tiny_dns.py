@@ -117,7 +117,7 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
             raise ValueError("Error requesting challenges: {0} {1}".format(code, result))
 
         # create the dns entry
-        challenge = [c for c in json.loads(result.decode('utf8'))['challenges'] 
+        challenge = [c for c in json.loads(result.decode('utf8'))['challenges']
                         if c['type'] == "dns-01"][0]
         token = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
         keyauthorization = "{0}.{1}".format(token, thumbprint)
@@ -163,7 +163,7 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
             raise ValueError(("DNS record '{}' does not exist and must be"
                                   " created".format(dns_body['host'])))
         if 'status' in resp.keys() and resp['status'] == 'Failed':
-            raise ValueError("DNS API called failed: {}"
+            raise ValueError("DNS API call failed: {}"
                                  .format(resp['statusDescription']))
 
         # update the record
