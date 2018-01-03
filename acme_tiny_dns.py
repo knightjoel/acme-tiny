@@ -198,7 +198,7 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
                                  .format(resp['statusDescription']))
 
         log.info("DNS record created. Pausing so DNS can settle...")
-        time.sleep(60)
+        time.sleep(120)
 
         # notify challenge are met
         code, result = _send_signed_request(challenge['uri'], {
