@@ -168,7 +168,7 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
 
         # update the record
         try:
-            dns_body.update({"record-id": resp.keys()[0]})
+            dns_body.update({"record-id": list(resp.keys())[0]})
         except ValueError as e:
             raise ValueError("Could not find DNS record to update: {}: {}"
                     .format(getattr(e, "code", None),
