@@ -125,9 +125,10 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
         # the cloudns api expects just the host part and not host.zone in the
         # 'host' key.
         if dns_zone != domain:
-            dns_host = domain[0:domain.find(dns_zone)-1]
+            dns_host = '_acme-challenge.' + domain[0:domain.find(dns_zone)-1]
         else:
-            dns_host = ""
+            # No trailing '.'
+            dns_host = '_acme-challenge'
         headers = {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
@@ -135,7 +136,7 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
             'sub-auth-user': local_config['cloudns_auth_user'],
             'auth-password': local_config['cloudns_auth_password'],
             'domain-name': dns_zone,
-            'host': "_acme-challenge." + dns_host,
+            'host': dns_host,
             'record': keyauthhash,
             'ttl': 300
         }
