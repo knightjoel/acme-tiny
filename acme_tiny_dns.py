@@ -165,7 +165,7 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
                                   " created".format(dns_body['host'])))
         if 'status' in resp.keys() and resp['status'] == 'Failed':
             raise ValueError("DNS API call failed: {}"
-                                 .format(resp['statusDescription']))
+                                 .format(resp['statusMessage']))
 
         # update the record
         try:
@@ -196,7 +196,7 @@ def get_crt(account_key, csr, dns_zone, log=LOGGER, CA=DEFAULT_CA):
 
         if 'status' in resp.keys() and resp['status'] == 'Failed':
             raise ValueError("DNS API called failed: {}"
-                                 .format(resp['statusDescription']))
+                                 .format(resp['statusMessage']))
 
         log.info("DNS record created. Pausing so DNS can settle...")
         time.sleep(120)
