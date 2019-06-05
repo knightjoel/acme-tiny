@@ -9,7 +9,7 @@ except ImportError:
 #DEFAULT_CA = "https://acme-staging.api.letsencrypt.org"
 DEFAULT_CA = "https://acme-v01.api.letsencrypt.org"
 
-DNS_API_URL = "https://api.cloudns.net/"
+DNS_API_URL = "https://api.cloudns.net"
 
 CONF = os.path.join(os.environ["HOME"], ".acme_tiny_dns.conf")
 
